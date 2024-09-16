@@ -1,0 +1,3 @@
+discord.py==2.4.0a4944+ge1aa6cc2
+mwrogue==0.1.5
+python-dotenv==1.0.1
