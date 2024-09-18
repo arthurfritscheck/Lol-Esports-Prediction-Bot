@@ -21,14 +21,14 @@ class BotCommands(commands.Cog):
 List of commands:
 !rules
 !schedule
-!leaderbord
+!leaderboard
 !my_predictions
 """)
 
     @commands.command()
-    async def leaderbord(self, ctx):
+    async def leaderboard(self, ctx):
         user_scores = self.calculate_scores()
-        embed = self.create_scoreboard_embed(user_scores)
+        embed = self.create_leaderboard_embed(user_scores)
         await ctx.send(embed=embed)
 
     @commands.command()
@@ -78,8 +78,8 @@ List of commands:
 
         return user_scores
 
-    def create_scoreboard_embed(self, user_scores):
-        embed = discord.Embed(title="leaderbord", color=0x00ff00)
+    def create_leaderboard_embed(self, user_scores):
+        embed = discord.Embed(title="leaderboard", color=0x00ff00)
         sorted_scores = sorted(user_scores.items(), key=lambda x: x[1]['score'], reverse=True)
 
         user_field = ""
