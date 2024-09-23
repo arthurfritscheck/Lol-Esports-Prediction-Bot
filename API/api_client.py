@@ -4,16 +4,19 @@ from datetime import datetime, timedelta, timezone
 from database.database import MatchDatabase
 import os
 from dotenv import load_dotenv
+from discord.ext import tasks
 
 load_dotenv()
 
 class APIHandler:
-    def __init__(self, db_path):
+    def __init__(self, bot, db_path):
+        self.bot = bot
         self.db_path = db_path
         self.site = EsportsClient("lol")
         self.db = MatchDatabase(db_path)
 
-    def update_match_data(self):
+    @tasks.loop(minutes=60)
+    async def update_match_data(self):
         try:
             # fill in tournament names of interest
             tournament_names = ["Worlds Qualifying Series 2024", 'Worlds 2024 Play-In', 'Worlds 2024 Main Event']
@@ -49,3 +52,7 @@ class APIHandler:
 
         except Exception as e:
             print(f"An error occurred whilst updating match data: {e}")
+
+    @update_match_data.before_loop
+    async def before_update_match_data(self):
+        await self.bot.wait_until_ready()

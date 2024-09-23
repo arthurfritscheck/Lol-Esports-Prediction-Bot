@@ -21,8 +21,7 @@ db = MatchDatabase(os.getenv('DATABASE_NAME'))
 db.create_tables()
 
 # initialize API handler
-api_handler = APIHandler(os.getenv('DATABASE_NAME'))
-api_handler.update_match_data()
+api_handler = APIHandler(bot, os.getenv('DATABASE_NAME'))
 
 conn = sqlite3.connect(os.getenv('DATABASE_NAME'))
 bot.db_cursor = conn.cursor()
@@ -40,6 +39,7 @@ async def load_extensions():
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    api_handler.update_match_data.start()
 
 @bot.event
 async def on_command_error(ctx, error):
