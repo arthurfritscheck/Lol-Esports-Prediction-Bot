@@ -13,7 +13,7 @@ class MatchDatabase:
             BestOf INTEGER,
             Team1 TEXT,
             Team2 TEXT,
-            Winner TEXT,
+            Winner INTEGER,
             Team1Score INTEGER,
             Team2Score INTEGER
         )''')
