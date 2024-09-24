@@ -34,13 +34,15 @@ List of commands:
     @commands.command()
     async def rules(self, ctx):
         rules_text = """
-        **Prediction Rules:**
-        - Predict the winner and the score for each match.
-        - Scoring:
-          - Best of 1: 1 point for correct winner.
-          - Best of 3: 2 points for correct winner and score, 1 point for correct winner only.
-          - Best of 5: 3 points for correct winner and score, 1 point for correct winner only.
-        """
+Predict the winner and the score for each match.
+
+**Prediction Rules:**
+
+Scoring:
+- **Best of 1**: correct winner = 1 point
+- **Best of 3**: correct winner = 1 point, correct winner & score = 2 points
+- **Best of 5**: correct winner = 1 point, correct winner & score = 3 points
+"""
         await ctx.send(rules_text)
 
     def calculate_scores(self):
