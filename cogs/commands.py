@@ -1,19 +1,72 @@
 import discord
 from discord.ext import commands
 from datetime import datetime, timezone, timedelta
-from database.database import MatchDatabase
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# discord allows at most 4096 characters in an embed description, stay a bit below it
+EMBED_DESCRIPTION_LIMIT = 4000
+
+
+def score_prediction(best_of, actual_winner, team1_score, team2_score, predicted_winner, predicted_team1_score, predicted_team2_score):
+    """Points for one prediction, or None if the match has no result yet."""
+    if actual_winner not in (1, 2):
+        return None
+    if predicted_winner != actual_winner:
+        return 0
+    exact_score = predicted_team1_score == team1_score and predicted_team2_score == team2_score
+    if best_of == 3 and exact_score:
+        return 2
+    if best_of == 5 and exact_score:
+        return 3
+    return 1
+
+
+def calculate_scores(matches_data, predictions_data):
+    matches = {match_id: (best_of, winner, team1_score, team2_score) for match_id, best_of, winner, team1_score, team2_score in matches_data}
+    user_scores = {}
+
+    for user_id, username, match_id, predicted_winner, predicted_team1_score, predicted_team2_score in predictions_data:
+        if match_id not in matches:
+            continue
+        points = score_prediction(*matches[match_id], predicted_winner, predicted_team1_score, predicted_team2_score)
+        if points is None:
+            continue
+        entry = user_scores.setdefault(user_id, {'username': username, 'score': 0, 'correct': 0, 'played': 0})
+        entry['score'] += points
+        entry['played'] += 1
+        if points > 0:
+            entry['correct'] += 1
+
+    return user_scores
+
+
+def chunk_lines(lines, limit=EMBED_DESCRIPTION_LIMIT):
+    chunks, current = [], ""
+    for line in lines:
+        if current and len(current) + len(line) + 1 > limit:
+            chunks.append(current)
+            current = ""
+        current += line + "\n"
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+async def send_paged_embeds(ctx, title, lines, color=0x00ff00):
+    chunks = chunk_lines(lines)
+    for i, chunk in enumerate(chunks):
+        page_title = title if len(chunks) == 1 else f"{title} ({i + 1}/{len(chunks)})"
+        await ctx.send(embed=discord.Embed(title=page_title, description=chunk, color=color))
+
+
+def discord_time(datetime_utc, style='f'):
+    ts = int(datetime.strptime(datetime_utc, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp())
+    return f"<t:{ts}:{style}>"
 
 
 class BotCommands(commands.Cog):
-    def __init__(self, bot, db_cursor):
+    def __init__(self, bot):
         self.bot = bot
-        self.db_cursor = db_cursor
-        self.db = MatchDatabase(os.getenv('DATABASE_NAME'))
-
+        self.db = bot.db
 
     @commands.command()
     async def all_commands(self, ctx):
@@ -23,18 +76,13 @@ List of commands:
 !schedule
 !leaderboard
 !my_predictions
+!refresh (admins only)
 """)
-
-    @commands.command()
-    async def leaderboard(self, ctx):
-        user_scores = self.calculate_scores()
-        embed = self.create_leaderboard_embed(user_scores)
-        await ctx.send(embed=embed)
 
     @commands.command()
     async def rules(self, ctx):
         rules_text = """
-Predict the winner and the score for each match.
+Predict the winner and the score for each match by clicking a button under its message. You can change your prediction until the match starts.
 
 **Prediction Rules:**
 
@@ -45,87 +93,66 @@ Scoring:
 """
         await ctx.send(rules_text)
 
-    def calculate_scores(self):
-        user_scores = {}
+    @commands.command()
+    async def leaderboard(self, ctx):
+        user_scores = calculate_scores(self.db.get_all_matches(), self.db.get_all_predictions())
+        if not user_scores:
+            await ctx.send("No results yet, the leaderboard will appear once the first predicted match is finished.")
+            return
 
-        self.db_cursor.execute("SELECT MatchId, BestOf, Winner, Team1Score, Team2Score FROM matches")
-        matches_data = self.db_cursor.fetchall()
+        sorted_scores = sorted(user_scores.values(), key=lambda x: x['score'], reverse=True)
+        lines = []
+        rank = 0
+        previous_score = None
+        for position, data in enumerate(sorted_scores, start=1):
+            # tied users share a rank
+            if data['score'] != previous_score:
+                rank = position
+                previous_score = data['score']
+            lines.append(f"**{rank}.** {data['username']} — {data['score']} points ({data['correct']}/{data['played']} correct)")
 
-        self.db_cursor.execute("SELECT UserID, Username, MatchId, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions")
-        predictions_data = self.db_cursor.fetchall()
+        await send_paged_embeds(ctx, "Leaderboard", lines)
 
-        for user_id, username, predicted_match_id, predicted_winner, predicted_team1_score, predicted_team2_score in predictions_data:
-            # find the actual match data for the predicted match
-            for match_id, best_of, actual_winner, team1_score, team2_score in matches_data:
-                if predicted_match_id == match_id:
-                    # ensure match is played and data is available
-                    if actual_winner is not None and team1_score is not None and team2_score is not None:
-                        if user_id not in user_scores:
-                            user_scores[user_id] = {'username': username, 'score': 0}
-
-                        # scoring logic based on best of format (1, 3, 5)
-                        if best_of == 1:
-                            if predicted_winner == actual_winner:
-                                user_scores[user_id]['score'] += 1
-                        elif best_of == 3:
-                            if predicted_winner == actual_winner and predicted_team1_score == team1_score and predicted_team2_score == team2_score:
-                                user_scores[user_id]['score'] += 2
-                            elif predicted_winner == actual_winner:
-                                user_scores[user_id]['score'] += 1
-                        elif best_of == 5:
-                            if predicted_winner == actual_winner and predicted_team1_score == team1_score and predicted_team2_score == team2_score:
-                                user_scores[user_id]['score'] += 3
-                            elif predicted_winner == actual_winner:
-                                user_scores[user_id]['score'] += 1
-
-        return user_scores
-
-    def create_leaderboard_embed(self, user_scores):
-        embed = discord.Embed(title="leaderboard", color=0x00ff00)
-        sorted_scores = sorted(user_scores.items(), key=lambda x: x[1]['score'], reverse=True)
-
-        user_field = ""
-        score_field = ""
-
-        for user_id, data in sorted_scores:
-            user_field += f"{data['username']}\n"
-            score_field += f"{data['score']} points\n"
-
-        embed.add_field(name="User", value=user_field, inline=True)
-        embed.add_field(name="Score", value=score_field, inline=True)
-
-        return embed
-    
     @commands.command()
     async def my_predictions(self, ctx):
-        user_id = ctx.author.id
-        self.db_cursor.execute("SELECT MatchId, BestOf, Team1, Team2, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions WHERE UserID = ?", (user_id,))
-        predictions = self.db_cursor.fetchall()
-        
-        if predictions:
-            embed = discord.Embed(title=f"{ctx.author.name}'s Predictions", color=0x00ff00)
-            for pred in predictions:
-                match_id, best_of, team1, team2, predicted_winner, predicted_team1_score, predicted_team2_score = pred
-                predicted_winner_team_name = team1 if predicted_winner == team1 else team2
-                embed.add_field(name=f"Match ID: {match_id}, Best of: {best_of}", value=f"Team1: {team1} - Team2: {team2}\nPredicted Winner: {predicted_winner_team_name}\nPredicted Score: {predicted_team1_score}-{predicted_team2_score}", inline=False)
-            await ctx.send(embed=embed)
-        else:
+        predictions = self.db.get_user_predictions(ctx.author.id)
+        if not predictions:
             await ctx.send("You have no predictions recorded.")
+            return
+
+        lines = []
+        total = 0
+        for (match_id, best_of, team1, team2, predicted_winner, predicted_team1_score, predicted_team2_score,
+             datetime_utc, winner, team1_score, team2_score) in predictions:
+            predicted_winner_team_name = team1 if predicted_winner == 1 else team2
+            points = score_prediction(best_of, winner, team1_score, team2_score, predicted_winner, predicted_team1_score, predicted_team2_score)
+
+            if points is None:
+                result = "⏳"
+            else:
+                total += points
+                result = f"{'✅' if points > 0 else '❌'} {team1_score}-{team2_score}, +{points}"
+
+            when = discord_time(datetime_utc, 'd') if datetime_utc else ""
+            lines.append(f"{when} **{team1}** vs **{team2}** (Bo{best_of}): {predicted_winner_team_name} {predicted_team1_score}-{predicted_team2_score} — {result}")
+
+        lines.append(f"\n**Total: {total} points**")
+        await send_paged_embeds(ctx, f"{ctx.author.display_name}'s Predictions", lines)
 
     @commands.command()
     async def schedule(self, ctx):
         current_utc_time = datetime.now(timezone.utc)
         upcoming_matches = self.db.get_upcoming_matches(current_utc_time, current_utc_time + timedelta(days=14))
-        embed = discord.Embed(title="Upcoming Matches", color=0x00ff00)
-        if upcoming_matches:
-            for match in upcoming_matches:
-                match_id, tournament, datetime_utc, best_of, team1, team2, winner, team1_score, team2_score = match
-                match_time = datetime.strptime(datetime_utc, '%Y-%m-%d %H:%M:%S')
-                embed.add_field(name=f"Match ID: {match_id}, Best of: {best_of}", value=f"Tournament: {tournament}\n{team1} vs {team2}\nMatch Time: {match_time}", inline=False)
-            await ctx.send(embed=embed)
-        else:
+        if not upcoming_matches:
             await ctx.send("No upcoming matches found.")
+            return
+
+        lines = []
+        for match_id, tournament, datetime_utc, best_of, team1, team2, winner, team1_score, team2_score in upcoming_matches:
+            lines.append(f"{discord_time(datetime_utc)} — **{team1}** vs **{team2}** (Bo{best_of})")
+
+        await send_paged_embeds(ctx, "Upcoming Matches", lines)
+
 
 async def setup(bot):
-    db_cursor = bot.db_cursor
-    await bot.add_cog(BotCommands(bot, db_cursor))
+    await bot.add_cog(BotCommands(bot))

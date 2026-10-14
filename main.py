@@ -2,55 +2,56 @@ import discord
 from discord.ext import commands
 from database.database import MatchDatabase
 from API.api_client import APIHandler
+from callbacks.buttoncallback import PredictButton
 import asyncio
-import os
-from dotenv import load_dotenv
-import sqlite3
+import sys
+import config
 
-load_dotenv()
+# the windows console can't print emoji in usernames by default, which would crash the print calls
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-# initialize the bot with required intents
-intents = discord.Intents.all()
-intents.message_content = True  # ensure bot has necessary permissions
+# only message content is needed for the ! commands, no privileged member/presence intents
+intents = discord.Intents.default()
+intents.message_content = True
 
-# specify intended prefix for commands
-bot = commands.Bot(command_prefix="!", intents=intents)
 
-# initialize database
-db = MatchDatabase(os.getenv('DATABASE_NAME'))
-db.create_tables()
+class PredictionDiscordBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+        # one shared database connection for the whole bot
+        self.db = MatchDatabase(config.DATABASE_NAME)
+        self.db.create_tables()
+        self.api_handler = APIHandler(self.db)
 
-# initialize API handler
-api_handler = APIHandler(bot, os.getenv('DATABASE_NAME'))
+    async def setup_hook(self):
+        # makes prediction buttons work on messages posted before a restart
+        self.add_dynamic_items(PredictButton)
+        for extension in ['cogs.predictionbot', 'cogs.commands']:
+            await self.load_extension(extension)
 
-conn = sqlite3.connect(os.getenv('DATABASE_NAME'))
-bot.db_cursor = conn.cursor()
 
-# load cogs
-cog_extensions = [
-    'cogs.predictionbot',
-    'cogs.commands'
-]
+bot = PredictionDiscordBot()
 
-async def load_extensions():
-    for extension in cog_extensions:
-        await bot.load_extension(extension)
 
 @bot.event
 async def on_ready():
+    # on_ready fires again on every reconnect, so nothing in here should start tasks
     print(f'Logged in as {bot.user}')
-    api_handler.update_match_data.start()
+
 
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("Command not found.")
+        await ctx.send("Command not found. Use !all_commands to see the list.")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("You don't have permission to use this command.")
     else:
         raise error
 
+
 async def main():
-    await load_extensions()
-    await bot.start(os.getenv('DISCORD_TOKEN'))
+    async with bot:
+        await bot.start(config.DISCORD_TOKEN)
 
 # run the bot
 if __name__ == "__main__":

@@ -1,54 +1,76 @@
 from datetime import datetime, timezone
-from database.database import MatchDatabase
+import re
 import discord
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
 
-db = MatchDatabase(os.getenv('DATABASE_NAME'))
+class PredictButton(discord.ui.DynamicItem[discord.ui.Button], template=r'predict\$(?P<match_id>.+)\$(?P<team1_score>\d+)-(?P<team2_score>\d+)'):
+    """
+    Prediction button that keeps working after a bot restart.
+    discord.py matches any clicked button whose custom_id fits the template and rebuilds it with from_custom_id.
+    """
 
-async def button_callback(interaction: discord.Interaction):
-    try:
-        user_id = interaction.user.id
-        username = interaction.user.display_name
-        username_mention = interaction.user.mention
-        custom_id = interaction.data['custom_id']
-        custom_id_parts = custom_id.split("$")
-        match_id = custom_id_parts[1]
-        prediction = "-".join(custom_id_parts[2:])
+    def __init__(self, match_id, team1_score, team2_score, row=0, disabled=False):
+        # blurple for team1 winning, red for team2 winning
+        style = discord.ButtonStyle.blurple if team1_score > team2_score else discord.ButtonStyle.red
+        super().__init__(
+            discord.ui.Button(
+                label=f"{team1_score}-{team2_score}",
+                style=style,
+                row=row,
+                disabled=disabled,
+                custom_id=f"predict${match_id}${team1_score}-{team2_score}"
+            )
+        )
+        self.match_id = match_id
+        self.team1_score = team1_score
+        self.team2_score = team2_score
 
-        # parse prediction
-        predicted_team1_score, predicted_team2_score = map(int, prediction.split("-"))
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button, match: re.Match):
+        return cls(match['match_id'], int(match['team1_score']), int(match['team2_score']))
 
-        # get match details
-        match_details = db.get_match_details(match_id)
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            db = interaction.client.db
+            username = interaction.user.display_name
 
-        if not match_details:
-            await interaction.response.send_message("Match details not found!", ephemeral=True)
-            return
-        
-        # extract match details
-        tournament = match_details[1]
-        match_time_str = match_details[2]
-        best_of, team1, team2 = match_details[3], match_details[4], match_details[5]
-        match_time = datetime.strptime(match_time_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+            match_details = db.get_match_details(self.match_id)
+            if not match_details:
+                await interaction.response.send_message("Match details not found!", ephemeral=True)
+                return
 
-        # check if match has started
-        current_time = datetime.now(timezone.utc)
-        if current_time > match_time:
-            await interaction.response.send_message("This match has already started, you cannot predict anymore.", ephemeral=True)
-            return
+            tournament, match_time_str, best_of, team1, team2 = match_details[1:6]
+            match_time = datetime.strptime(match_time_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
 
-        # determine predicted winner based on scores (1 = team1 wins, 2 = team2 wins) for ease of comparison with leaguepedia's data
-        predicted_winner = 1 if predicted_team1_score > predicted_team2_score else 2
+            if datetime.now(timezone.utc) >= match_time:
+                await interaction.response.send_message("This match has already started, you cannot predict anymore.", ephemeral=True)
+                return
 
-        # store prediction in database
-        db.store_prediction(user_id, username, match_id, tournament, match_time_str, best_of, team1, team2, predicted_winner, predicted_team1_score, predicted_team2_score)
-        await interaction.response.send_message(f"{username_mention} predicted {predicted_team1_score}-{predicted_team2_score} for {team1}-{team2}.")
-        
-        print(f"{username} predicted {predicted_team1_score}-{predicted_team2_score} for {team1}-{team2}.")
-    
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        await interaction.response.send_message("An error occurred while processing your prediction. Please try again later.", ephemeral=True)
+            # 1 = team1 wins, 2 = team2 wins, for ease of comparison with leaguepedia's data
+            predicted_winner = 1 if self.team1_score > self.team2_score else 2
+
+            db.store_prediction(interaction.user.id, username, self.match_id, tournament, match_time_str, best_of, team1, team2,
+                                predicted_winner, self.team1_score, self.team2_score)
+            await interaction.response.send_message(f"{interaction.user.mention} predicted {self.team1_score}-{self.team2_score} for {team1} - {team2}.")
+
+            print(f"{username} predicted {self.team1_score}-{self.team2_score} for {team1}-{team2}.")
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred while processing your prediction. Please try again later.", ephemeral=True)
+
+
+SCORE_OPTIONS = {
+    1: [(1, 0), (0, 1)],
+    3: [(2, 0), (2, 1), (1, 2), (0, 2)],
+    5: [(3, 0), (3, 1), (3, 2), (2, 3), (1, 3), (0, 3)],
+}
+
+
+def build_prediction_view(match_id, best_of, disabled=False):
+    view = discord.ui.View(timeout=None)
+    for team1_score, team2_score in SCORE_OPTIONS.get(best_of, []):
+        row = 0 if team1_score > team2_score else 1
+        view.add_item(PredictButton(match_id, team1_score, team2_score, row=row, disabled=disabled))
+    return view
