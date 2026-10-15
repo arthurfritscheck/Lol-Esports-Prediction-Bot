@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cogs.commands import score_prediction, calculate_scores
+from scoring import score_prediction, calculate_scores, rank_scores, user_stats
 from match_message import picks_line
 from tournament import BonusResults, score_bonus, bonus_lock_time, bonus_team_options, match_stage
 
@@ -48,6 +48,37 @@ class MatchScoringTests(unittest.TestCase):
         self.assertEqual(scores[1]['score'], 4)
         self.assertEqual((scores[1]['correct'], scores[1]['played']), (2, 2))
         self.assertEqual(scores[2]['score'], 0)
+
+
+class StandingsAndStatsTests(unittest.TestCase):
+    def test_stage_filter(self):
+        matches = [(P + 'Play-In_Round 1_1', 5, 1, 3, 0), (P + 'Main Event_Round 1_1', 1, 1, 1, 0)]
+        predictions = [(1, 'Alice', P + 'Play-In_Round 1_1', 1, 3, 0), (1, 'Alice', P + 'Main Event_Round 1_1', 1, 1, 0)]
+        self.assertEqual(calculate_scores(matches, predictions, 'Play-In')[1]['score'], 3)
+        self.assertEqual(calculate_scores(matches, predictions, 'Swiss')[1]['score'], 1)
+        self.assertNotIn(1, calculate_scores(matches, predictions, 'Knockouts'))
+
+    def test_tied_users_share_rank(self):
+        ranked = rank_scores({1: {'username': 'b', 'score': 5}, 2: {'username': 'a', 'score': 5}, 3: {'username': 'c', 'score': 2}})
+        self.assertEqual([(e['username'], e['rank']) for e in ranked], [('a', 1), ('b', 1), ('c', 3)])
+
+    def test_streaks_and_formats(self):
+        def row(best_of, predicted, actual):
+            # (match_id, best_of, team1, team2, predicted_winner, p1, p2, time, winner, s1, s2)
+            return ('m', best_of, 'A', 'B', 1, predicted[0], predicted[1], '2026-10-23 17:00:00', 1 if actual[0] > actual[1] else 2, actual[0], actual[1])
+        rows = [
+            row(1, (1, 0), (1, 0)),  # correct
+            row(3, (2, 0), (2, 0)),  # correct, exact
+            row(5, (3, 1), (3, 2)),  # correct
+            row(1, (1, 0), (0, 1)),  # wrong
+            row(3, (2, 1), (2, 1)),  # correct, exact
+        ]
+        stats = user_stats(rows)
+        self.assertEqual((stats['correct'], stats['played']), (4, 5))
+        self.assertEqual((stats['best_streak'], stats['current_streak']), (3, 1))
+        self.assertEqual(stats['exact'], 2)
+        self.assertEqual(stats['by_format'][1], [1, 2])
+        self.assertEqual(stats['points'], 1 + 2 + 1 + 0 + 2)
 
 
 class PicksLineTests(unittest.TestCase):

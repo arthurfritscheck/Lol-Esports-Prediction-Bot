@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import tasks, commands
 from datetime import datetime, timezone
 from tournament import (BONUS_CATEGORIES, BonusResults, bonus_lock_time, bonus_team_options, score_bonus, format_bonus_picks)
-from cogs.commands import chunk_lines
+from formatting import chunk_lines
 import config
 
 

@@ -40,12 +40,26 @@ def result_summary(predictions, team1, team2, winner, team1_score, team2_score):
             f"{correct_winner}/{len(predictions)} predicted the winner, {exact} got the exact score.")
 
 
+def odds_line(odds, team1, team2, state):
+    """e.g. '📈 Polymarket odds: Cloud9 32% · Karmine Corp 68%', in the same order as the match"""
+    if not odds:
+        return None
+    team1_percent, team2_percent, slug, closing = odds
+    label = "closing odds" if closing and state != 'open' else "odds"
+    # <...> around the url stops discord from adding a big link preview under every match message
+    source = f"[Polymarket](<https://polymarket.com/event/{slug}>)" if slug else "Polymarket"
+    return f"📈 {source} {label}: {team1} {team1_percent}% · {team2} {team2_percent}%"
+
+
 def render_match_message(db, match_id, state):
     """Full content of a match's prediction message for the given state: 'open', 'locked' or 'final'."""
     match_id, tournament, datetime_utc, best_of, team1, team2, winner, team1_score, team2_score = db.get_match_details(match_id)
     predictions = db.get_match_predictions(match_id)
 
     content = match_header(team1, team2, best_of, tournament, parse_match_time(datetime_utc))
+    odds = odds_line(db.get_market_odds(match_id), team1, team2, state)
+    if odds:
+        content += "\n" + odds
     content += "\n" + picks_line(predictions, winner if state == 'final' else None, team1_score, team2_score)
     if state == 'locked':
         content += "\n🔒 Predictions are closed."
