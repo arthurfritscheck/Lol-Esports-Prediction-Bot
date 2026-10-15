@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from mwrogue.esports_client import EsportsClient
 from mwrogue.auth_credentials import AuthCredentials
 import config
@@ -16,6 +17,9 @@ class APIHandler:
     def __init__(self, db):
         self.db = db
         self.site = None
+        # shown by /status
+        self.last_success = None
+        self.last_error = None
 
     def connect(self):
         if config.LEAGUEPEDIA_USERNAME and config.LEAGUEPEDIA_PASSWORD:
@@ -86,12 +90,16 @@ class APIHandler:
                      for record in team_response if record['Team'] and record['Team'] != 'TBD']
             if teams:
                 self.db.replace_teams(teams)
+            # manual results from /setresult win over leaguepedia
+            self.db.apply_result_overrides()
+            self.last_success = datetime.now(timezone.utc)
 
             print(f"Match data updated ({len(response)} matches, {len(teams)} teams).")
             return True
 
         except Exception as e:
-            print(f"An error occurred whilst updating match data: {e}")
+            print(f"An error occurred whilst updating match data: {type(e).__name__}: {e}")
+            self.last_error = (datetime.now(timezone.utc), f"{type(e).__name__}: {e}"[:300])
             # force a fresh login next time in case the session expired
             self.site = None
             return False

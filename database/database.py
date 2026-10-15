@@ -69,7 +69,111 @@ class MatchDatabase:
                 Value TEXT
             )''')
 
+        # results entered by an admin with /setresult, they win over leaguepedia's data until cleared
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS result_overrides (
+                MatchId TEXT PRIMARY KEY,
+                Winner INTEGER,
+                Team1Score INTEGER,
+                Team2Score INTEGER
+            )''')
+
+        # polymarket win chances per match. Closing = 1 once the odds right before the start are stored
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS market_odds (
+                MatchId TEXT PRIMARY KEY,
+                Team1Percent INTEGER,
+                Team2Percent INTEGER,
+                Slug TEXT,
+                Closing INTEGER,
+                FetchedAt TEXT
+            )''')
+
+        # users who opted in to reminder pings
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS reminder_users (
+                UserID INTEGER PRIMARY KEY
+            )''')
+
         self.conn.commit()
+
+    def set_result_override(self, match_id, winner, team1_score, team2_score):
+        self.cursor.execute("""
+            INSERT INTO result_overrides (MatchId, Winner, Team1Score, Team2Score) VALUES (?, ?, ?, ?)
+            ON CONFLICT(MatchId) DO UPDATE SET Winner = excluded.Winner, Team1Score = excluded.Team1Score, Team2Score = excluded.Team2Score
+        """, (match_id, winner, team1_score, team2_score))
+        self.conn.commit()
+        self.apply_result_overrides()
+
+    def clear_result_override(self, match_id):
+        self.cursor.execute("DELETE FROM result_overrides WHERE MatchId=?", (match_id,))
+        removed = self.cursor.rowcount > 0
+        self.conn.commit()
+        return removed
+
+    def apply_result_overrides(self):
+        """Called after every leaguepedia update, so manual results don't get overwritten."""
+        self.cursor.execute("""
+            UPDATE matches SET
+                Winner = (SELECT Winner FROM result_overrides o WHERE o.MatchId = matches.MatchId),
+                Team1Score = (SELECT Team1Score FROM result_overrides o WHERE o.MatchId = matches.MatchId),
+                Team2Score = (SELECT Team2Score FROM result_overrides o WHERE o.MatchId = matches.MatchId)
+            WHERE MatchId IN (SELECT MatchId FROM result_overrides)
+        """)
+        self.conn.commit()
+
+    def get_result_override_ids(self):
+        self.cursor.execute("SELECT MatchId FROM result_overrides")
+        return {row[0] for row in self.cursor.fetchall()}
+
+    def save_market_odds(self, match_id, team1_percent, team2_percent, slug, closing):
+        self.cursor.execute("""
+            INSERT INTO market_odds (MatchId, Team1Percent, Team2Percent, Slug, Closing, FetchedAt) VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(MatchId) DO UPDATE SET Team1Percent = excluded.Team1Percent, Team2Percent = excluded.Team2Percent,
+                Slug = excluded.Slug, Closing = excluded.Closing, FetchedAt = excluded.FetchedAt
+        """, (match_id, team1_percent, team2_percent, slug, 1 if closing else 0))
+        self.conn.commit()
+
+    def get_market_odds(self, match_id):
+        """(team1 percent, team2 percent, slug, closing) or None"""
+        self.cursor.execute("SELECT Team1Percent, Team2Percent, Slug, Closing FROM market_odds WHERE MatchId=?", (match_id,))
+        return self.cursor.fetchone()
+
+    def set_reminder(self, user_id, enabled):
+        if enabled:
+            self.cursor.execute("INSERT OR IGNORE INTO reminder_users (UserID) VALUES (?)", (user_id,))
+        else:
+            self.cursor.execute("DELETE FROM reminder_users WHERE UserID=?", (user_id,))
+        self.conn.commit()
+
+    def get_reminder_users(self):
+        self.cursor.execute("SELECT UserID FROM reminder_users")
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def get_open_posted_matches(self):
+        self.cursor.execute("""
+            SELECT pm.MatchId, pm.ChannelId, pm.MessageId, m.DateTime_UTC, m.Team1, m.Team2
+            FROM posted_messages pm JOIN matches m ON pm.MatchId = m.MatchId
+            WHERE pm.State = 'open'
+            ORDER BY m.DateTime_UTC
+        """)
+        return self.cursor.fetchall()
+
+    def get_predicted_user_ids(self, match_id):
+        self.cursor.execute("SELECT UserID FROM predictions WHERE MatchId=?", (match_id,))
+        return {row[0] for row in self.cursor.fetchall()}
+
+    def delete_posted_message(self, match_id):
+        self.cursor.execute("DELETE FROM posted_messages WHERE MatchId=?", (match_id,))
+        self.conn.commit()
+
+    def count(self, table):
+        # only used with fixed table names from the code, never user input
+        self.cursor.execute(f"SELECT COUNT(*) FROM {table}")
+        return self.cursor.fetchone()[0]
+
+    def backup_to(self, path):
+        destination = sqlite3.connect(path)
+        with destination:
+            self.conn.backup(destination)
+        destination.close()
 
     def replace_teams(self, teams):
         """teams: list of (team, stage). Replaces the whole list, so teams removed on leaguepedia disappear too."""

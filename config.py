@@ -22,3 +22,13 @@ UPDATE_INTERVAL_MINUTES = int(os.getenv('UPDATE_INTERVAL_MINUTES', '10'))
 
 # how far ahead prediction messages are posted
 POST_WINDOW_DAYS = int(os.getenv('POST_WINDOW_DAYS', '6'))
+
+# how long before a match opted-in users who haven't predicted get pinged
+REMINDER_MINUTES = int(os.getenv('REMINDER_MINUTES', '60'))
+
+# discord user ids allowed to use the admin commands, comma separated. Empty = the owner of the bot application
+OWNER_IDS = {int(x) for x in os.getenv('OWNER_IDS', '').replace(' ', '').split(',') if x}
+
+# polymarket odds on the match messages. POLYMARKET_TAG is the tag of the tournament's events on polymarket
+POLYMARKET_ENABLED = os.getenv('POLYMARKET_ENABLED', 'true').lower() == 'true'
+POLYMARKET_TAG = os.getenv('POLYMARKET_TAG', 'lol-worlds-2026')

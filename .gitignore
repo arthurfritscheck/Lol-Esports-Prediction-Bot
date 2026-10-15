@@ -121,3 +121,6 @@ data/*.db
 
 # bot log files
 logs/
+
+# database backups
+data/backups/
