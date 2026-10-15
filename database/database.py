@@ -47,6 +47,68 @@ class MatchDatabase:
                 State TEXT
             )''')
 
+        # teams taking part, from leaguepedia's tournament rosters (Stage is e.g. 'Play-In' or 'Main Event')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS teams (
+                Team TEXT,
+                Stage TEXT,
+                PRIMARY KEY (Team, Stage)
+            )''')
+
+        # bonus predictions, one row per picked team, e.g. (user, 'finalist', 'T1')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS bonus_picks (
+                UserID INTEGER,
+                Username TEXT,
+                Category TEXT,
+                Team TEXT,
+                PRIMARY KEY (UserID, Category, Team)
+            )''')
+
+        # small key/value store for one-off events, e.g. whether the bonus picks were already announced
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS bot_state (
+                Key TEXT PRIMARY KEY,
+                Value TEXT
+            )''')
+
+        self.conn.commit()
+
+    def replace_teams(self, teams):
+        """teams: list of (team, stage). Replaces the whole list, so teams removed on leaguepedia disappear too."""
+        self.cursor.execute("DELETE FROM teams")
+        self.cursor.executemany("INSERT OR IGNORE INTO teams (Team, Stage) VALUES (?, ?)", teams)
+        self.conn.commit()
+
+    def get_teams(self):
+        self.cursor.execute("SELECT Team, Stage FROM teams ORDER BY Team COLLATE NOCASE")
+        return self.cursor.fetchall()
+
+    def get_full_matches(self):
+        self.cursor.execute("SELECT * FROM matches ORDER BY DateTime_UTC")
+        return self.cursor.fetchall()
+
+    def set_bonus_picks(self, user_id, username, category, teams):
+        self.cursor.execute("DELETE FROM bonus_picks WHERE UserID=? AND Category=?", (user_id, category))
+        self.cursor.executemany(
+            "INSERT INTO bonus_picks (UserID, Username, Category, Team) VALUES (?, ?, ?, ?)",
+            [(user_id, username, category, team) for team in teams]
+        )
+        # keep the display name consistent across categories
+        self.cursor.execute("UPDATE bonus_picks SET Username=? WHERE UserID=?", (username, user_id))
+        self.conn.commit()
+
+    def get_bonus_picks(self, user_id=None):
+        if user_id is None:
+            self.cursor.execute("SELECT UserID, Username, Category, Team FROM bonus_picks")
+        else:
+            self.cursor.execute("SELECT UserID, Username, Category, Team FROM bonus_picks WHERE UserID=?", (user_id,))
+        return self.cursor.fetchall()
+
+    def get_state(self, key):
+        self.cursor.execute("SELECT Value FROM bot_state WHERE Key=?", (key,))
+        row = self.cursor.fetchone()
+        return row[0] if row else None
+
+    def set_state(self, key, value):
+        self.cursor.execute("INSERT INTO bot_state (Key, Value) VALUES (?, ?) ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value", (key, value))
         self.conn.commit()
 
     def store_prediction(self, user_id, username, match_id, tournament, datetime_utc, best_of, team1, team2, predicted_winner, predicted_team1_score, predicted_team2_score):
@@ -114,7 +176,7 @@ class MatchDatabase:
         return self.cursor.fetchall()
 
     def get_match_predictions(self, match_id):
-        self.cursor.execute("SELECT UserID, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions WHERE MatchId=?", (match_id,))
+        self.cursor.execute("SELECT Username, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions WHERE MatchId=?", (match_id,))
         return self.cursor.fetchall()
 
     def get_posted_message(self, match_id):

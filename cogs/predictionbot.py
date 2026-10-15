@@ -1,21 +1,13 @@
 import asyncio
 import discord
+from discord import app_commands
 from discord.ext import tasks, commands
 from callbacks.buttoncallback import build_prediction_view
+from match_message import parse_match_time, render_match_message
 from datetime import datetime, timezone, timedelta
 import config
 
 PLACEHOLDER_TEAMS = {None, '', 'TBD'}
-
-
-def parse_match_time(datetime_utc):
-    return datetime.strptime(datetime_utc, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-
-
-def match_header(team1, team2, best_of, tournament, match_time):
-    # discord timestamps render in each user's own timezone, :R shows a live countdown
-    ts = int(match_time.timestamp())
-    return f"**{team1}** vs **{team2}**\nBo{best_of} · {tournament}\n<t:{ts}:F> (<t:{ts}:R>)"
 
 
 class PredictionBot(commands.Cog):
@@ -23,7 +15,7 @@ class PredictionBot(commands.Cog):
         self.bot = bot
         self.db = bot.db
         self.api_handler = bot.api_handler
-        # the hourly loop and !refresh must never run at the same time, or a match could be posted twice
+        # the background loop and /refresh must never run at the same time, or a match could be posted twice
         self.cycle_lock = asyncio.Lock()
 
     async def cog_load(self):
@@ -75,8 +67,7 @@ class PredictionBot(commands.Cog):
                 print(f"Match id too long for a button, skipping: {match_id}")
                 continue
 
-            match_time = parse_match_time(datetime_utc)
-            message = await channel.send(match_header(team1, team2, best_of, tournament, match_time), view=build_prediction_view(match_id, best_of))
+            message = await channel.send(render_match_message(self.db, match_id, 'open'), view=build_prediction_view(match_id, best_of))
             self.db.save_posted_message(match_id, channel.id, message.id, 'open')
             print(f"Posted prediction message for {team1} vs {team2}.")
 
@@ -85,14 +76,13 @@ class PredictionBot(commands.Cog):
 
         for posted in self.db.get_unfinished_posted_messages():
             match_id, channel_id, message_id, state, tournament, datetime_utc, best_of, team1, team2, winner, team1_score, team2_score = posted
-            match_time = parse_match_time(datetime_utc)
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 continue
 
             if winner in (1, 2):
                 new_state = 'final'
-            elif now >= match_time:
+            elif now >= parse_match_time(datetime_utc):
                 new_state = 'locked'
             elif state == 'open':
                 continue
@@ -103,15 +93,9 @@ class PredictionBot(commands.Cog):
             if new_state == state:
                 continue
 
-            content = match_header(team1, team2, best_of, tournament, match_time)
-            if new_state == 'locked':
-                content += "\n🔒 Predictions are closed."
-            elif new_state == 'final':
-                content += "\n" + self.result_summary(match_id, team1, team2, winner, team1_score, team2_score)
-
             try:
                 await channel.get_partial_message(message_id).edit(
-                    content=content,
+                    content=render_match_message(self.db, match_id, new_state),
                     view=build_prediction_view(match_id, best_of, disabled=new_state != 'open')
                 )
             except discord.NotFound:
@@ -123,23 +107,14 @@ class PredictionBot(commands.Cog):
 
             self.db.set_posted_message_state(match_id, new_state)
 
-    def result_summary(self, match_id, team1, team2, winner, team1_score, team2_score):
-        predictions = self.db.get_match_predictions(match_id)
-        correct_winner = sum(1 for _, predicted_winner, _, _ in predictions if predicted_winner == winner)
-        exact = sum(1 for _, _, p1, p2 in predictions if p1 == team1_score and p2 == team2_score)
-
-        winner_name = team1 if winner == 1 else team2
-        score = f" {team1_score}-{team2_score}" if team1_score is not None and team2_score is not None else ""
-        return (f"✅ **{winner_name}** won{score}.\n"
-                f"{correct_winner}/{len(predictions)} predicted the winner, {exact} got the exact score.")
-
-    @commands.command()
+    @commands.hybrid_command(description="Fetch match data from Leaguepedia right now (admins only)")
     @commands.has_permissions(manage_guild=True)
+    @app_commands.default_permissions(manage_guild=True)
     async def refresh(self, ctx):
-        """Force a match data refresh right now (admins only)."""
-        await ctx.send("Refreshing match data...")
+        # leaguepedia can take a few seconds, slash commands must respond within 3
+        await ctx.defer(ephemeral=True)
         await self.run_cycle()
-        await ctx.send("Done.")
+        await ctx.send("Match data refreshed.", ephemeral=True)
 
 
 async def setup(bot):

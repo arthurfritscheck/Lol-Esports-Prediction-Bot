@@ -115,3 +115,9 @@ dmypy.json
 
 # SQL database
 data/*.db
+# local env variants (test bot config, backups); .env.example stays tracked
+.env.*
+!.env.example
+
+# bot log files
+logs/
