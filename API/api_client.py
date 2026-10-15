@@ -41,10 +41,31 @@ class APIHandler:
             limit=500
         )
 
+    def fetch_teams(self):
+        if self.site is None:
+            self.connect()
+
+        prefix = config.TOURNAMENT_PAGE_PREFIX.replace("'", "\\'")
+        return self.site.cargo_client.query(
+            tables="TournamentRosters",
+            fields="Team, OverviewPage",
+            where=f"OverviewPage LIKE '{prefix}%'",
+            limit=100
+        )
+
+    def fetch_all(self):
+        return self.fetch_matches(), self.fetch_teams()
+
     async def update_match_data(self):
         try:
             # mwrogue is synchronous, run it in a thread so the bot doesn't freeze during the request
-            response = await asyncio.to_thread(self.fetch_matches)
+            try:
+                response, team_response = await asyncio.to_thread(self.fetch_all)
+            except Exception as e:
+                # the leaguepedia session tends to go stale between updates, a fresh login fixes it
+                print(f"Leaguepedia request failed ({type(e).__name__}), logging in again and retrying.")
+                self.site = None
+                response, team_response = await asyncio.to_thread(self.fetch_all)
 
             for record in response:
                 if not record['MatchId'] or not record['DateTime UTC']:
@@ -60,7 +81,13 @@ class APIHandler:
                     to_int(record['Team1Score']),
                     to_int(record['Team2Score'])
                 )
-            print(f"Match data updated ({len(response)} matches).")
+            # e.g. '2026 Season World Championship/Main Event' -> 'Main Event', placeholder slots are skipped
+            teams = [(record['Team'], record['OverviewPage'][len(config.TOURNAMENT_PAGE_PREFIX):])
+                     for record in team_response if record['Team'] and record['Team'] != 'TBD']
+            if teams:
+                self.db.replace_teams(teams)
+
+            print(f"Match data updated ({len(response)} matches, {len(teams)} teams).")
             return True
 
         except Exception as e:

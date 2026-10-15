@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import re
 import discord
+from match_message import render_match_message
 
 
 class PredictButton(discord.ui.DynamicItem[discord.ui.Button], template=r'predict\$(?P<match_id>.+)\$(?P<team1_score>\d+)-(?P<team2_score>\d+)'):
@@ -51,9 +52,21 @@ class PredictButton(discord.ui.DynamicItem[discord.ui.Button], template=r'predic
 
             db.store_prediction(interaction.user.id, username, self.match_id, tournament, match_time_str, best_of, team1, team2,
                                 predicted_winner, self.team1_score, self.team2_score)
-            await interaction.response.send_message(f"{interaction.user.mention} predicted {self.team1_score}-{self.team2_score} for {team1} - {team2}.")
-
+            # only the user sees the confirmation, everyone sees the picks on the match message itself
+            await interaction.response.send_message(
+                f"You predicted **{team1} {self.team1_score}-{self.team2_score} {team2}**. You can change it until the match starts.",
+                ephemeral=True
+            )
             print(f"{username} predicted {self.team1_score}-{self.team2_score} for {team1}-{team2}.")
+
+            try:
+                # use the stored state, in case the background loop locked the message in the meantime
+                posted = db.get_posted_message(self.match_id)
+                state = posted[2] if posted else 'open'
+                await interaction.message.edit(content=render_match_message(db, self.match_id, state))
+            except discord.HTTPException as e:
+                # the prediction is saved either way, the picks list catches up on the next edit
+                print(f"Could not update picks on the match message: {e}")
 
         except Exception as e:
             print(f"An error occurred: {e}")

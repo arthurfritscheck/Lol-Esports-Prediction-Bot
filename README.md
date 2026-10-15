@@ -64,24 +64,29 @@ On Windows, double-click `run_bot.bat`, which restarts the bot automatically if 
 python main.py
 ```
 
+6. **Test bot (optional)**:
+To try changes without affecting the real server, put a second bot's token, a test channel and a test database in `.env.test`, and start it with `run_test_bot.bat` (or `python main.py --test`). It can run at the same time as the real bot.
+
 ## Usage
 
 ### Commands
 
-Prefix: `!`
+All commands are slash commands (the old `!` versions still work for now). Replies marked *private* are only visible to the user who ran the command.
 
-* `!rules`: Displays the scoring rules for predictions.
-* `!schedule`: Shows the list of upcoming matches found in the database (next 14 days).
-* `!leaderboard`: Displays the top users and their scores.
-* `!my_predictions`: Shows the user their own prediction history and points.
-* `!refresh`: Fetches match data right now (requires the Manage Server permission).
-* `!all_commands`: Lists all available commands.
+* `/rules`: Displays the scoring rules for predictions (private).
+* `/schedule`: Shows the list of upcoming matches (next 14 days, private).
+* `/leaderboard`: Displays the top users and their scores.
+* `/predictions [user]`: Shows your own prediction history and points, or another user's (private).
+* `/bonus`: Make or change your bonus predictions (private). After the lock, shows everyone's bonus picks.
+* `/refresh`: Fetches match data right now (requires the Manage Server permission, private).
+
+The bot must be invited with the `bot` and `applications.commands` scopes for slash commands to appear.
 
 ### How it Works
 
 1. **Fetching**: The bot checks Leaguepedia every 10 minutes for new matches, reschedules, and results.
 2. **Posting**: When an upcoming match has both teams decided, the bot posts a message in the configured `CHANNEL_ID` with buttons representing possible scores (e.g., "3-0", "3-1", etc.).
-3. **Predicting**: Users click the button corresponding to their prediction, and can change it until the match starts.
+3. **Predicting**: Users click the button corresponding to their prediction, and can change it until the match starts. The confirmation is only visible to the user, and the match message shows a live list of who picked what.
 4. **Locking**: Once the match starts, the buttons are disabled.
 5. **Scoring**: After the match concludes, the message shows the result, and users can check the `!leaderboard` to see their points.
 
@@ -98,17 +103,39 @@ Points are awarded based on the accuracy of the prediction and the length of the
   * Correct Winner (only): **1 point**
   * Correct Winner + Correct Score (Exact Prediction): **3 points**
 
+### Bonus Predictions
+
+Before the swiss stage starts, everyone can use `/bonus` to predict:
+
+* The tournament winner: **5 points**
+* The two finalists: **2 points** each
+* The two teams that go 3-0 in swiss: **2 points** each
+* The two teams that go 0-3 in swiss: **2 points** each
+
+Picks are hidden until they lock when the first swiss match starts, then the bot posts everyone's picks. Results are worked out automatically from the match data and count towards the leaderboard.
+
+## Logs and Tests
+
+* Everything the bot prints is also written to `logs/bot.log` (or `logs/test-bot.log` for the test bot).
+* Run the scoring tests with `python -m unittest discover tests`.
+
 ## Project Structure
 
 * `main.py`: The entry point. Initializes the bot, database, and API handler.
 * `config.py`: Loads all settings from `.env`.
 * `API/api_client.py`: Handles communication with the Leaguepedia API via `mwrogue`.
 * `callbacks/buttoncallback.py`: The persistent prediction buttons and the logic for handling clicks.
+* `match_message.py`: Builds the text of a match message (header, picks, lock notice, result).
+* `tournament.py`: Tournament stages and bonus prediction grading.
+* `bot_logging.py`: Log file and console setup.
+* `cogs/bonus.py`: The `/bonus` command and the bonus announcements.
+* `tests/`: Unit tests for the scoring.
 * `cogs/`:
   * `predictionbot.py`: Background task loop that refreshes match data, posts matches, locks them, and posts results.
   * `commands.py`: Handles chat commands like `!leaderboard` and `!rules`, and the scoring logic.
 * `database/database.py`: Manages the SQLite connection and table operations.
 * `run_bot.bat`: Windows launcher that restarts the bot if it stops.
+* `run_test_bot.bat`: Windows launcher for the test bot (`.env.test`).
 
 ## Tracking a Different Tournament
 

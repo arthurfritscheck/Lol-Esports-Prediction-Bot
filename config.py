@@ -1,7 +1,10 @@
 import os
+import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+# run with --test (or run_test_bot.bat) to use .env.test (test bot, test channel, test database) instead of .env
+TEST_MODE = '--test' in sys.argv
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env.test' if TEST_MODE else '.env'))
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
