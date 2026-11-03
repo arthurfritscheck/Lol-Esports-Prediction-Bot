@@ -18,7 +18,7 @@ LEAGUEPEDIA_PASSWORD = os.getenv('LEAGUEPEDIA_PASSWORD')
 TOURNAMENT_PAGE_PREFIX = os.getenv('TOURNAMENT_PAGE_PREFIX', '2026 Season World Championship/')
 
 # how often match data is refreshed from leaguepedia
-UPDATE_INTERVAL_MINUTES = int(os.getenv('UPDATE_INTERVAL_MINUTES', '10'))
+UPDATE_INTERVAL_MINUTES = int(os.getenv('UPDATE_INTERVAL_MINUTES', '45'))
 
 # how far ahead prediction messages are posted
 POST_WINDOW_DAYS = int(os.getenv('POST_WINDOW_DAYS', '6'))
@@ -32,3 +32,8 @@ OWNER_IDS = {int(x) for x in os.getenv('OWNER_IDS', '').replace(' ', '').split('
 # polymarket odds on the match messages. POLYMARKET_TAG is the tag of the tournament's events on polymarket
 POLYMARKET_ENABLED = os.getenv('POLYMARKET_ENABLED', 'true').lower() == 'true'
 POLYMARKET_TAG = os.getenv('POLYMARKET_TAG', 'lol-worlds-2026')
+
+# delete regular messages in the prediction channel (the bot owner's are kept). Needs Manage Messages there
+CHANNEL_GUARD_ENABLED = os.getenv('CHANNEL_GUARD_ENABLED', 'true').lower() == 'true'
+# optional: channel the "predictions only" notice points to for discussions
+DISCUSSION_CHANNEL_ID = int(os.getenv('DISCUSSION_CHANNEL_ID', '0') or 0)

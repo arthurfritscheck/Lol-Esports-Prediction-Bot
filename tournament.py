@@ -1,6 +1,22 @@
+from datetime import timedelta
 from match_message import parse_match_time
 
 PLACEHOLDER_TEAMS = {None, '', 'TBD'}
+
+# matches less than this far apart belong to the same match day, e.g. a swiss day from 17:00 to 00:00 utc
+MATCH_DAY_GAP = timedelta(hours=6)
+
+
+def group_match_days(matches, gap=MATCH_DAY_GAP):
+    """Splits matches (rows sorted by time, DateTime_UTC at index 2) into match days."""
+    days, previous = [], None
+    for match in matches:
+        start = parse_match_time(match[2])
+        if previous is None or start - previous >= gap:
+            days.append([])
+        days[-1].append(match)
+        previous = start
+    return days
 
 # category key -> label, number of teams to pick, points per correct team
 BONUS_CATEGORIES = {

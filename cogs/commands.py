@@ -31,7 +31,7 @@ def leaderboard_lines(standings, stage=None):
     lines = []
     for entry in standings:
         bonus_text = f", {entry['bonus']} from bonus" if entry.get('bonus') else ""
-        lines.append(f"**{entry['rank']}.** {entry['username']} — {points_text(entry['score'])} ({entry['correct']}/{entry['played']} correct{bonus_text})")
+        lines.append(f"**{entry['rank']}.** <@{entry['user_id']}> — {points_text(entry['score'])} ({entry['correct']}/{entry['played']} correct{bonus_text})")
     return lines
 
 

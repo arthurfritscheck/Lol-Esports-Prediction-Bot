@@ -4,12 +4,16 @@ from discord import app_commands
 from discord.ext import tasks, commands
 from callbacks.buttoncallback import build_prediction_view
 from match_message import parse_match_time, render_match_message
+from tournament import group_match_days
 from checks import owner_only
 from API import polymarket
 from datetime import datetime, timezone, timedelta
 import config
 
 PLACEHOLDER_TEAMS = {None, '', 'TBD'}
+
+# a match day whose teams aren't all known yet is still posted (the known matches) once its first match is this close
+DAY_HOLD_LIMIT = timedelta(hours=3)
 
 
 class PredictionBot(commands.Cog):
@@ -74,26 +78,41 @@ class PredictionBot(commands.Cog):
         return True
 
     async def post_new_matches(self, channel, markets=None):
+        """
+        Posts whole match days at once: as soon as a day's first match is within POST_WINDOW_DAYS, all of that day's
+        matches are posted together, in order. A day waits until all its teams are known (e.g. swiss round 2 waits for
+        the pairings), unless its first match is less than DAY_HOLD_LIMIT away, then the known matches go out anyway.
+        """
         now = datetime.now(timezone.utc)
-        upcoming_matches = self.db.get_upcoming_matches(now, now + timedelta(days=config.POST_WINDOW_DAYS))
+        upcoming_matches = self.db.get_upcoming_matches(now, now + timedelta(days=config.POST_WINDOW_DAYS + 30))
 
-        for match in upcoming_matches:
-            match_id, tournament, datetime_utc, best_of, team1, team2 = match[:6]
+        for day in group_match_days(upcoming_matches):
+            first_start = parse_match_time(day[0][2])
+            if first_start > now + timedelta(days=config.POST_WINDOW_DAYS):
+                break
+            all_teams_known = all(m[4] not in PLACEHOLDER_TEAMS and m[5] not in PLACEHOLDER_TEAMS for m in day)
+            if not all_teams_known and first_start - now > DAY_HOLD_LIMIT:
+                continue
+            for match in day:
+                await self.post_match(channel, match, markets)
 
-            if self.db.get_posted_message(match_id):
-                continue
-            # wait until both teams are decided (swiss rounds, knockouts) and the format is known
-            if team1 in PLACEHOLDER_TEAMS or team2 in PLACEHOLDER_TEAMS or best_of not in (1, 3, 5):
-                continue
-            # discord limits custom_id to 100 characters
-            if len(f"predict${match_id}$0-0") > 100:
-                print(f"Match id too long for a button, skipping: {match_id}")
-                continue
+    async def post_match(self, channel, match, markets=None):
+        match_id, tournament, datetime_utc, best_of, team1, team2 = match[:6]
 
-            self.store_odds(markets, match_id, team1, team2, datetime_utc)
-            message = await channel.send(render_match_message(self.db, match_id, 'open'), view=build_prediction_view(match_id, best_of))
-            self.db.save_posted_message(match_id, channel.id, message.id, 'open')
-            print(f"Posted prediction message for {team1} vs {team2}.")
+        if self.db.get_posted_message(match_id):
+            return
+        # wait until both teams are decided (swiss rounds, knockouts) and the format is known
+        if team1 in PLACEHOLDER_TEAMS or team2 in PLACEHOLDER_TEAMS or best_of not in (1, 3, 5):
+            return
+        # discord limits custom_id to 100 characters
+        if len(f"predict${match_id}$0-0") > 100:
+            print(f"Match id too long for a button, skipping: {match_id}")
+            return
+
+        self.store_odds(markets, match_id, team1, team2, datetime_utc)
+        message = await channel.send(render_match_message(self.db, match_id, 'open'), view=build_prediction_view(match_id, best_of))
+        self.db.save_posted_message(match_id, channel.id, message.id, 'open')
+        print(f"Posted prediction message for {team1} vs {team2}.")
 
     async def update_posted_messages(self, markets=None):
         now = datetime.now(timezone.utc)

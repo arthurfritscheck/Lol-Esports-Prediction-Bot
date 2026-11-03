@@ -280,7 +280,7 @@ class MatchDatabase:
         return self.cursor.fetchall()
 
     def get_match_predictions(self, match_id):
-        self.cursor.execute("SELECT Username, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions WHERE MatchId=?", (match_id,))
+        self.cursor.execute("SELECT UserID, Username, PredictedWinner, PredictedTeam1Score, PredictedTeam2Score FROM predictions WHERE MatchId=?", (match_id,))
         return self.cursor.fetchall()
 
     def get_posted_message(self, match_id):

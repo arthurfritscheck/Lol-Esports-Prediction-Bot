@@ -46,7 +46,7 @@ class Admin(commands.Cog):
         best_of, team1, team2 = details[3], details[4], details[5]
         wins_needed = (best_of + 1) // 2 if best_of else None
         if team1_score == team2_score or (wins_needed and max(team1_score, team2_score) != wins_needed):
-            await interaction.response.send_message(f"That isn't a valid Bo{best_of} result, the winner needs exactly {wins_needed} wins.", ephemeral=True)
+            await interaction.response.send_message(f"That isn't a valid Bo{best_of} result, the winner needs exactly {wins_needed} win{'' if wins_needed == 1 else 's'}.", ephemeral=True)
             return
 
         winner = 1 if team1_score > team2_score else 2
@@ -57,6 +57,38 @@ class Admin(commands.Cog):
         note = "" if message else " (the match message couldn't be updated, it may not have been posted)"
         await interaction.followup.send(
             f"Result saved: **{team1} {team1_score}-{team2_score} {team2}**{note}. It stays in place until `/clearresult`, even if Leaguepedia shows something else.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="setprediction", description="Enter or change someone's prediction by hand, also after the lock (bot owner only)")
+    @app_commands.describe(user="Whose prediction", match="The match", team1_score="Games won by the first team", team2_score="Games won by the second team")
+    @app_commands.autocomplete(match=match_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
+    @owner_only()
+    async def setprediction(self, interaction: discord.Interaction, user: discord.Member, match: str,
+                            team1_score: app_commands.Range[int, 0, 3], team2_score: app_commands.Range[int, 0, 3]):
+        details = self.db.get_match_details(match)
+        if details is None:
+            await interaction.response.send_message("Match not found, pick one from the list.", ephemeral=True)
+            return
+        tournament, datetime_utc, best_of, team1, team2 = details[1:6]
+        wins_needed = (best_of + 1) // 2 if best_of else None
+        if team1_score == team2_score or (wins_needed and max(team1_score, team2_score) != wins_needed):
+            await interaction.response.send_message(f"That isn't a valid Bo{best_of} score, the winner needs exactly {wins_needed} win{'' if wins_needed == 1 else 's'}.", ephemeral=True)
+            return
+
+        previous = next(((p1, p2) for user_id, _, _, p1, p2 in self.db.get_match_predictions(match) if user_id == user.id), None)
+        predicted_winner = 1 if team1_score > team2_score else 2
+        self.db.store_prediction(user.id, user.display_name, match, tournament, datetime_utc, best_of, team1, team2,
+                                 predicted_winner, team1_score, team2_score)
+        before = f" (was {previous[0]}-{previous[1]})" if previous else " (new prediction)"
+        print(f"{interaction.user.display_name} set {user.display_name}'s prediction for {team1} vs {team2} to {team1_score}-{team2_score}{before}.")
+
+        await interaction.response.defer(ephemeral=True)
+        message = await self.prediction_cog().refresh_match_message(match)
+        note = "" if message else " The match message couldn't be updated, it may not have been posted."
+        await interaction.followup.send(
+            f"Saved: {user.mention} predicts **{team1} {team1_score}-{team2_score} {team2}**{before}. Points and leaderboards use it straight away.{note}",
             ephemeral=True
         )
 

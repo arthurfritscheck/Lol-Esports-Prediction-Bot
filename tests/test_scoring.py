@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scoring import score_prediction, calculate_scores, rank_scores, user_stats
 from match_message import picks_line
-from tournament import BonusResults, score_bonus, bonus_lock_time, bonus_team_options, match_stage
+from tournament import BonusResults, score_bonus, bonus_lock_time, bonus_team_options, match_stage, group_match_days
 
 P = "2026 Season World Championship/"
 
@@ -83,12 +83,12 @@ class StandingsAndStatsTests(unittest.TestCase):
 
 class PicksLineTests(unittest.TestCase):
     def test_grouped_in_button_order(self):
-        line = picks_line([('Carl', 2, 1, 3), ('alice', 1, 3, 1), ('Bob', 1, 3, 1), ('Dana', 1, 3, 0)])
-        self.assertEqual(line, "Picks: **3-0**: Dana · **3-1**: alice, Bob · **1-3**: Carl")
+        line = picks_line([(3, 'Carl', 2, 1, 3), (1, 'alice', 1, 3, 1), (2, 'Bob', 1, 3, 1), (4, 'Dana', 1, 3, 0)])
+        self.assertEqual(line, "Picks: **3-0**: <@4> · **3-1**: <@1>, <@2> · **1-3**: <@3>")
 
     def test_exact_score_marked_after_result(self):
-        line = picks_line([('Alice', 1, 3, 1)], winner=1, team1_score=3, team2_score=1)
-        self.assertIn("**3-1** ✅", line)
+        line = picks_line([(1, 'Alice', 1, 3, 1)], winner=1, team1_score=3, team2_score=1)
+        self.assertIn("**3-1** ||✅||", line)
 
     def test_no_picks(self):
         self.assertEqual(picks_line([]), "Picks: none yet")
@@ -108,6 +108,19 @@ def swiss_and_knockouts():
         match("Main Event_Semifinals_1", 'A', 'D', winner=1, best_of=5),
         match("Main Event_Finals_1", 'A', 'C', winner=1, score=(3, 2), best_of=5),
     ]
+
+
+class MatchDayTests(unittest.TestCase):
+    def test_group_by_six_hour_gap(self):
+        times = ['2026-10-15 18:00:00', '2026-10-15 23:00:00',  # play-in day: 5h apart, same day
+                 '2026-10-23 17:00:00', '2026-10-23 22:00:00', '2026-10-24 00:00:00',  # swiss day past midnight
+                 '2026-10-24 17:00:00']  # next day: 17h later
+        days = group_match_days([(str(i), 'W', t) for i, t in enumerate(times)])
+        self.assertEqual([len(d) for d in days], [2, 3, 1])
+
+    def test_exactly_six_hours_is_a_new_day(self):
+        days = group_match_days([('a', 'W', '2026-10-23 18:00:00'), ('b', 'W', '2026-10-24 00:00:00')])
+        self.assertEqual(len(days), 2)
 
 
 class BonusTests(unittest.TestCase):

@@ -8,6 +8,7 @@ A Discord bot that allows users to predict the outcomes and scores of profession
 * **Interactive Predictions**: Users predict matches using Discord UI buttons (no complex typing required). Buttons keep working after a bot restart.
 * **Automatic Locking & Results**: Buttons are disabled when a match starts, and the match message is updated with the result and how many users predicted it correctly.
 * **Polymarket Odds**: Match messages show the Polymarket win chances when the match is posted (or as soon as Polymarket lists it), and the closing odds once the match starts.
+* **Clean Prediction Channel**: Regular messages in the prediction channel are deleted (the bot owner's are kept), so it only contains match posts. Slash commands and buttons keep working. The bot needs the Manage Messages permission in that channel.
 * **Local Times**: Match times use Discord timestamps, so every user sees them in their own timezone with a countdown.
 * **Dynamic Scoring System**: Points are awarded based on the match format (Best of 1, 3, or 5).
 * **Leaderboard**: Tracks and displays user rankings based on prediction accuracy.
@@ -61,6 +62,8 @@ Optional settings:
 | `REMINDER_MINUTES` | `60` | How long before a match the reminder pings are sent |
 | `POLYMARKET_ENABLED` | `true` | Show Polymarket odds on match messages |
 | `POLYMARKET_TAG` | `lol-worlds-2026` | Polymarket tag of the tournament's match events |
+| `CHANNEL_GUARD_ENABLED` | `true` | Delete regular messages in the prediction channel |
+| `DISCUSSION_CHANNEL_ID` | — | Channel the "predictions only" notice points to |
 | `OWNER_IDS` | owner of the bot application | Comma separated Discord user ids allowed to use the admin commands |
 
 5. **Run the Bot**:
@@ -90,6 +93,7 @@ Admin commands (only the bot owner can use them; they are hidden from members wi
 
 * `/refresh`: Fetches match data right now.
 * `/setresult match team1_score team2_score`: Enters a result by hand. It stays in place until `/clearresult`, even if Leaguepedia shows something else.
+* `/setprediction user match team1_score team2_score`: Enters or changes someone's prediction by hand, also after the match has locked (e.g. when the bot was offline).
 * `/clearresult match`: Removes a manual result.
 * `/repost match`: Posts a match's prediction message again.
 * `/status`: Last data update, last error, next match, counts and last backup.
@@ -99,12 +103,12 @@ The bot must be invited with the `bot` and `applications.commands` scopes for sl
 ### How it Works
 
 1. **Fetching**: The bot checks Leaguepedia every 10 minutes for new matches, reschedules, and results.
-2. **Posting**: When an upcoming match has both teams decided, the bot posts a message in the configured `CHANNEL_ID` with buttons representing possible scores (e.g., "3-0", "3-1", etc.).
+2. **Posting**: The bot posts a whole match day at once (matches less than 6 hours apart count as one day): as soon as the day's first match is within `POST_WINDOW_DAYS`, every match of that day gets a message in the configured `CHANNEL_ID` with buttons representing possible scores (e.g., "3-0", "3-1", etc.). A day waits until all its teams are known (e.g. swiss pairings), but its known matches are posted anyway once the first match is less than 3 hours away.
 3. **Predicting**: Users click the button corresponding to their prediction, and can change it until the match starts. The confirmation is only visible to the user, and the match message shows a live list of who picked what.
 4. **Locking**: Once the match starts, the buttons are disabled.
 5. **Scoring**: After the match concludes, the message shows the result, and users can check the `/leaderboard` to see their points.
 6. **Reminders**: About an hour before a match, users who turned on `/reminders` and haven't predicted it yet get pinged.
-7. **Daily leaderboard**: When a match day is over (all results are in and the next match is at least 4 hours away), the bot posts the leaderboard with rank changes and the points gained that day.
+7. **Daily leaderboard**: When a match day is over (all results are in and the next match is at least 6 hours away), the bot posts the leaderboard with rank changes and the points gained that day.
 8. **Backups**: Once a day the database is copied to `data/backups/` (the last 14 copies are kept).
 
 ## Scoring System
@@ -151,6 +155,7 @@ Picks are hidden until they lock when the first swiss match starts, then the bot
 * `checks.py`: The owner-only check for admin commands.
 * `cogs/bonus.py`: The `/bonus` command and the bonus announcements.
 * `cogs/admin.py`: Admin commands (`/setresult`, `/clearresult`, `/repost`, `/status`).
+* `cogs/channel_guard.py`: Deletes regular messages in the prediction channel.
 * `cogs/announcements.py`: Reminder pings, the daily leaderboard post and the daily backup.
 * `tests/`: Unit tests for the scoring.
 * `cogs/`:

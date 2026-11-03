@@ -16,13 +16,15 @@ setup_logging(config.TEST_MODE)
 # all commands are slash commands, so no privileged intents (like message content) are needed
 intents = discord.Intents.default()
 
-COGS = ['cogs.predictionbot', 'cogs.commands', 'cogs.bonus', 'cogs.admin', 'cogs.announcements']
+COGS = ['cogs.predictionbot', 'cogs.commands', 'cogs.bonus', 'cogs.admin', 'cogs.announcements', 'cogs.channel_guard']
 
 
 class PredictionDiscordBot(commands.Bot):
     def __init__(self):
         # there are no text commands anymore, the prefix is only required by discord.py
-        super().__init__(command_prefix=commands.when_mentioned, intents=intents, help_command=None)
+        # never ping anyone unless a message explicitly allows it (the picks and leaderboards show @names without pinging)
+        super().__init__(command_prefix=commands.when_mentioned, intents=intents, help_command=None,
+                         allowed_mentions=discord.AllowedMentions.none())
         # one shared database connection for the whole bot
         self.db = MatchDatabase(config.DATABASE_NAME)
         self.db.create_tables()

@@ -4,6 +4,7 @@ import discord
 from discord.ext import tasks, commands
 from datetime import datetime, timezone, timedelta
 from match_message import parse_match_time
+from tournament import MATCH_DAY_GAP
 from scoring import build_standings
 from formatting import discord_time, points_text, paged_embeds
 import config
@@ -11,7 +12,7 @@ import config
 PLACEHOLDER_TEAMS = {None, '', 'TBD'}
 
 # a match day is over when no match is waiting for its result and the next match is at least this far away
-DAY_BREAK = timedelta(hours=4)
+DAY_BREAK = MATCH_DAY_GAP
 # matches that started longer ago than this without a result are ignored (e.g. a decider that was never needed)
 RESULT_WAIT_LIMIT = timedelta(hours=12)
 BACKUPS_TO_KEEP = 14
@@ -120,7 +121,7 @@ class Announcements(commands.Cog):
             gained = entry['score'] - old_scores.get(key, 0)
             change = rank_change_text(old_ranks.get(key), entry['rank']) if previous else ""
             gained_text = f" ({gained:+d} today)" if gained and previous else ""
-            lines.append(f"**{entry['rank']}.** {entry['username']} — {points_text(entry['score'])}{gained_text} {change}".rstrip())
+            lines.append(f"**{entry['rank']}.** <@{entry['user_id']}> — {points_text(entry['score'])}{gained_text} {change}".rstrip())
 
         if lines:
             new_results = len(finished) - previous.get('finished', 0)

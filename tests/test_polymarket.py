@@ -64,7 +64,7 @@ class FindOddsTests(unittest.TestCase):
 class OddsLineTests(unittest.TestCase):
     def test_match_order(self):
         self.assertEqual(odds_line((32, 68, 'lol-c9-kc-2026-10-15', 0), 'Cloud9', 'Karmine Corp', 'open'),
-                         "📈 [Polymarket](<https://polymarket.com/event/lol-c9-kc-2026-10-15>) odds: Cloud9 32% · Karmine Corp 68%")
+                         "📈 [Polymarket](<https://polymarket.com/event/lol-c9-kc-2026-10-15>) odds: ||Cloud9 32% · Karmine Corp 68%||")
 
     def test_closing_label_after_lock(self):
         self.assertIn("closing odds", odds_line((32, 68, 's', 1), 'Cloud9', 'Karmine Corp', 'locked'))
