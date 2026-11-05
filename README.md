@@ -87,7 +87,7 @@ All commands are slash commands. Replies marked *private* are only visible to th
 * `/predictions [user]`: Shows your own prediction history and points, or another user's (private).
 * `/stats [user]`: Rank, points, correct-winner rate per format, exact scores and streaks (private).
 * `/bonus`: Make or change your bonus predictions (private). After the lock, shows everyone's bonus picks.
-* `/reminders on|off|list [user]`: Get pinged an hour before matches you haven't predicted yet. Admins can change it for others.
+* `/reminders on|off|list [user]`: Get pinged an hour before matches you haven't predicted yet. The bot owner can change it for others.
 
 Admin commands (only the bot owner can use them; they are hidden from members without the Manage Server permission, and other admins get an error):
 
