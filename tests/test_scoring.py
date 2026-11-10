@@ -84,7 +84,7 @@ class StandingsAndStatsTests(unittest.TestCase):
 class PicksLineTests(unittest.TestCase):
     def test_grouped_in_button_order(self):
         line = picks_line([(3, 'Carl', 2, 1, 3), (1, 'alice', 1, 3, 1), (2, 'Bob', 1, 3, 1), (4, 'Dana', 1, 3, 0)])
-        self.assertEqual(line, "Picks: **3-0**: <@4> · **3-1**: <@1>, <@2> · **1-3**: <@3>")
+        self.assertEqual(line, "Picks:\n**3-0**: <@4>\n**3-1**: <@1>, <@2>\n**1-3**: <@3>")
 
     def test_exact_score_marked_after_result(self):
         line = picks_line([(1, 'Alice', 1, 3, 1)], winner=1, team1_score=3, team2_score=1)

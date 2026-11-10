@@ -40,7 +40,8 @@ def picks_line(predictions, winner=None, team1_score=None, team2_score=None):
         mark = f" {spoiler('✅')}" if winner in (1, 2) and (p1, p2) == (team1_score, team2_score) else ""
         users = sorted(by_score[(p1, p2)], key=lambda u: u[0].lower())
         groups.append(f"**{p1}-{p2}**{mark}: {', '.join(mention(user_id) for _, user_id in users)}")
-    return "Picks: " + " · ".join(groups)
+    # one line per score, so it's easy to see who picked what
+    return "Picks:\n" + "\n".join(groups)
 
 
 def result_summary(predictions, team1, team2, winner, team1_score, team2_score):
