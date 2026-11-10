@@ -2,6 +2,9 @@
 
 A Discord bot that allows users to predict the outcomes and scores of professional League of Legends matches. It automatically fetches match schedules from Leaguepedia, handles user predictions via interactive buttons, and tracks scores on a leaderboard.
 
+![A match post with predictions and leaderboard](docs/images/LoL_discord_bot.png)
+
+
 ## Features
 
 * **Automated Data Fetching**: Uses the `mwrogue` library to fetch match schedules and results directly from Leaguepedia (currently configured for Worlds 2026).
